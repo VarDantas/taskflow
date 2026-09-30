@@ -17,8 +17,8 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebarNote">
-        <strong>Кудрявцева, группа ИКБО-20-25</strong>
-        <span>Практика 1: TaskFlow</span>
+        <strong>Практика 2</strong>
+        <span>Состояние, формы и localStorage</span>
       </div>
     </aside>
   );
