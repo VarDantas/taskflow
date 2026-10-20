@@ -60,3 +60,30 @@ GET {{baseUrl}}/api/tasks/00000000-0000-4000-8000-000000000000
 
 ### Ошибка 404: неизвестный endpoint
 GET {{baseUrl}}/api/unknown
+
+### НОВОЕ: Статистика задач
+GET {{baseUrl}}/api/stats
+
+### НОВОЕ: Фильтр по проекту
+GET {{baseUrl}}/api/tasks?project=TaskFlow
+
+### НОВОЕ: Создать задачу с описанием
+POST {{baseUrl}}/api/tasks
+Content-Type: application/json
+
+{
+  "title": "Проверка самостоятельной работы",
+  "project": "Учебный проект",
+  "status": "Нужно сделать",
+  "priority": "Высокий",
+  "dueDate": "2026-11-15",
+  "description": "Проверяем, что поле description сохраняется в базу."
+}
+
+### НОВОЕ: Обновить только описание задачи
+PATCH {{baseUrl}}/api/tasks/{{taskId}}
+Content-Type: application/json
+
+{
+  "description": "Обновленное описание для задачи из базы данных."
+}

@@ -43,6 +43,10 @@ function validateTask(data, partial = false) {
     errors.push('Поле dueDate должно быть строкой');
   }
 
+  if (data.description !== undefined && typeof data.description !== 'string') {
+    errors.push('Поле description должно быть строкой');
+  }
+
   if (partial && Object.keys(data).length === 0) {
     errors.push('Передайте хотя бы одно поле для изменения');
   }
@@ -53,11 +57,23 @@ function validateTask(data, partial = false) {
 app.get('/api/health', async (req, res, next) => {
   try {
     const result = await pool.query('SELECT NOW() AS db_time');
-    res.json({
-      status: 'ok',
-      database: 'connected',
-      dbTime: result.rows[0].db_time,
-    });
+    res.json({ status: 'ok', database: 'connected', dbTime: result.rows[0].db_time });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// НОВЫЙ ENDPOINT: Статистика
+app.get('/api/stats', async (req, res, next) => {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        COUNT(*)::int AS total,
+        COUNT(CASE WHEN status = 'В работе' THEN 1 END)::int AS "inProgress",
+        COUNT(CASE WHEN status = 'Готово' THEN 1 END)::int AS done
+      FROM tasks
+    `);
+    res.json(result.rows[0]);
   } catch (error) {
     next(error);
   }
@@ -65,23 +81,20 @@ app.get('/api/health', async (req, res, next) => {
 
 app.get('/api/tasks', async (req, res, next) => {
   try {
-    const { status, priority } = req.query;
+    const { status, priority, project } = req.query;
 
     const result = await pool.query(
       `SELECT 
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
+        id, title, project, status, priority, description,
         due_date::text AS "dueDate", 
         created_at AS "createdAt", 
         updated_at AS "updatedAt" 
       FROM tasks 
       WHERE ($1::text IS NULL OR status = $1) 
-      AND ($2::text IS NULL OR priority = $2) 
+      AND ($2::text IS NULL OR priority = $2)
+      AND ($3::text IS NULL OR project = $3)
       ORDER BY created_at DESC`,
-      [status ?? null, priority ?? null]
+      [status ?? null, priority ?? null, project ?? null]
     );
 
     res.json(result.rows);
@@ -98,11 +111,7 @@ app.get('/api/tasks/:id', async (req, res, next) => {
 
     const result = await pool.query(
       `SELECT 
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
+        id, title, project, status, priority, description,
         due_date::text AS "dueDate", 
         created_at AS "createdAt", 
         updated_at AS "updatedAt" 
@@ -132,27 +141,19 @@ app.post('/api/tasks', async (req, res, next) => {
     const status = req.body.status ?? 'Нужно сделать';
     const priority = req.body.priority ?? 'Средний';
     const dueDate = req.body.dueDate || null;
+    const description = req.body.description || null;
 
     const result = await pool.query(
       `INSERT INTO tasks (
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
-        due_date
+        id, title, project, status, priority, due_date, description
       ) 
-      VALUES ($1, $2, $3, $4, $5, $6) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7) 
       RETURNING 
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
+        id, title, project, status, priority, description,
         due_date::text AS "dueDate", 
         created_at AS "createdAt", 
         updated_at AS "updatedAt"`,
-      [id, req.body.title.trim(), req.body.project.trim(), status, priority, dueDate]
+      [id, req.body.title.trim(), req.body.project.trim(), status, priority, dueDate, description]
     );
 
     res.status(201).json(result.rows[0]);
@@ -174,11 +175,7 @@ app.patch('/api/tasks/:id', async (req, res, next) => {
 
     const currentResult = await pool.query(
       `SELECT 
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
+        id, title, project, status, priority, description,
         due_date::text AS "dueDate" 
       FROM tasks 
       WHERE id = $1`,
@@ -196,27 +193,20 @@ app.patch('/api/tasks/:id', async (req, res, next) => {
     const status = req.body.status ?? current.status;
     const priority = req.body.priority ?? current.priority;
     const dueDate = req.body.dueDate !== undefined ? (req.body.dueDate || null) : current.dueDate;
+    const description = req.body.description !== undefined ? (req.body.description || null) : current.description;
 
     const result = await pool.query(
       `UPDATE tasks 
       SET 
-        title = $1, 
-        project = $2, 
-        status = $3, 
-        priority = $4, 
-        due_date = $5, 
-        updated_at = NOW() 
-      WHERE id = $6 
+        title = $1, project = $2, status = $3, priority = $4, 
+        due_date = $5, description = $6, updated_at = NOW() 
+      WHERE id = $7 
       RETURNING 
-        id, 
-        title, 
-        project, 
-        status, 
-        priority, 
+        id, title, project, status, priority, description,
         due_date::text AS "dueDate", 
         created_at AS "createdAt", 
         updated_at AS "updatedAt"`,
-      [title, project, status, priority, dueDate, req.params.id]
+      [title, project, status, priority, dueDate, description, req.params.id]
     );
 
     res.json(result.rows[0]);
@@ -231,10 +221,7 @@ app.delete('/api/tasks/:id', async (req, res, next) => {
       return res.status(400).json({ message: 'Некорректный id задачи' });
     }
 
-    const result = await pool.query(
-      'DELETE FROM tasks WHERE id = $1',
-      [req.params.id]
-    );
+    const result = await pool.query('DELETE FROM tasks WHERE id = $1', [req.params.id]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ message: 'Задача не найдена' });
